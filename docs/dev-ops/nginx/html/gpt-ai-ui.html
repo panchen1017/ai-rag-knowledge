@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>DeepSeek AI Chat</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Tailwind -->
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 h-screen">
+<div class="container mx-auto max-w-3xl h-screen flex flex-col py-4">
+
+    <!-- 顶部标题 -->
+    <header class="mb-3 px-1">
+        <h1 class="text-xl font-semibold text-gray-900">DeepSeek AI 对话</h1>
+        <p class="text-xs text-gray-500 mt-1">
+            基于 SpringBoot + Spring AI + Ollama 的流式应答 Demo
+        </p>
+    </header>
+
+    <!-- 消息容器 -->
+    <div id="messageContainer"
+         class="flex-1 overflow-y-auto p-4 space-y-4 bg-white rounded-xl shadow border border-gray-200">
+        <div class="flex justify-center">
+            <div class="text-xs text-gray-400">
+                你好 👋 输入内容后点击「发送」，开始和 AI 对话
+            </div>
+        </div>
+    </div>
+
+    <!-- 输入区域 -->
+    <div class="mt-3 bg-white rounded-xl shadow border border-gray-200 p-3">
+        <div class="flex items-center space-x-2">
+            <input
+                    id="messageInput"
+                    type="text"
+                    placeholder="请输入你的问题，例如：解释一下 Flux 流式接口是什么？"
+                    class="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    onkeypress="handleKeyPress(event)"
+            />
+            <button
+                    id="sendButton"
+                    onclick="sendMessage()"
+                    class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 active:bg-blue-800 disabled:bg-blue-300 disabled:cursor-not-allowed transition-colors"
+            >
+                发送
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+    // ====== 配置 ======
+    const BASE_URL = "http://localhost:8090/api/v1/ollama/generate_stream";
+    const DEFAULT_MODEL = "deepseek-r1:1.5b";
+
+    const messageContainer = document.getElementById("messageContainer");
+    const messageInput = document.getElementById("messageInput");
+    const sendButton = document.getElementById("sendButton");
+
+    let currentEventSource = null;
+
+    // 添加一条消息到容器
+    function addMessage(content, role) {
+        const wrapper = document.createElement("div");
+        const isUser = role === "user";
+
+        wrapper.className = `flex ${isUser ? "justify-end" : "justify-start"}`;
+
+        wrapper.innerHTML = `
+      <div class="flex max-w-[85%] items-start space-x-2">
+        ${isUser ? "" : `
+          <div class="w-7 h-7 rounded-full bg-emerald-500 flex items-center justify-center text-white text-xs font-semibold select-none">
+            AI
+          </div>
+        `}
+        <div class="px-3 py-2 rounded-2xl shadow-sm text-sm leading-relaxed break-words ${
+            isUser
+                ? "bg-blue-600 text-white rounded-br-sm"
+                : "bg-gray-100 text-gray-800 rounded-bl-sm"
+        }">
+          <span class="message-text">${content}</span>
+        </div>
+      </div>
+    `;
+
+        messageContainer.appendChild(wrapper);
+        messageContainer.scrollTop = messageContainer.scrollHeight;
+
+        // 返回内部文本 span，方便后续流式更新
+        return wrapper.querySelector(".message-text");
+    }
+
+    // 更新最后一条 AI 消息的内容
+    function updateLastAssistantMessage(htmlContent) {
+        const children = messageContainer.children;
+        if (!children.length) return;
+        const last = children[children.length - 1];
+        const span = last.querySelector(".message-text");
+        if (span) {
+            span.innerHTML = htmlContent;
+            messageContainer.scrollTop = messageContainer.scrollHeight;
+        }
+    }
+
+    // 关闭当前 SSE 连接
+    function closeCurrentEventSource() {
+        if (currentEventSource) {
+            currentEventSource.close();
+            currentEventSource = null;
+        }
+    }
+
+    // 发送消息
+    function sendMessage() {
+        const message = messageInput.value.trim();
+        if (!message) return;
+
+        // 添加用户消息
+        addMessage(escapeHtml(message), "user");
+        messageInput.value = "";
+
+        // 关闭上一次的 SSE 连接
+        closeCurrentEventSource();
+
+        // 添加 AI 占位消息（有小光标动画）
+        const aiSpan = addMessage('<span class="animate-pulse">▍</span>', "assistant");
+
+        // 拼接请求 URL
+        const apiUrl =
+            BASE_URL +
+            `?model=${encodeURIComponent(DEFAULT_MODEL)}&message=${encodeURIComponent(message)}`;
+
+        // 禁用按钮，避免重复点击
+        sendButton.disabled = true;
+
+        // 建立 SSE 连接
+        const eventSource = new EventSource(apiUrl);
+        currentEventSource = eventSource;
+        let buffer = "";
+
+        eventSource.onmessage = (event) => {
+            try {
+                if (!event.data) return;
+
+                const raw = JSON.parse(event.data);
+                // 既兼容数组包裹，也兼容单对象
+                const item = Array.isArray(raw) ? raw[0] : raw;
+                if (!item || !item.result) return;
+
+                const result = item.result;
+                const output = result.output || {};
+                const metadata = result.metadata || {};
+
+                const contentChunk = output.content || "";
+                const finishReason = metadata.finishReason;
+
+                if (contentChunk) {
+                    buffer += contentChunk;
+                    // 带一个动态光标
+                    aiSpan.innerHTML = escapeHtml(buffer) + ' <span class="animate-pulse">▍</span>';
+                    messageContainer.scrollTop = messageContainer.scrollHeight;
+                }
+
+                if (finishReason === "STOP") {
+                    eventSource.close();
+                    currentEventSource = null;
+                    sendButton.disabled = false;
+                    // 去掉光标
+                    aiSpan.innerHTML = escapeHtml(buffer);
+                }
+            } catch (e) {
+                console.error("解析 SSE 数据失败:", e);
+            }
+        };
+
+        eventSource.onerror = (err) => {
+            console.error("EventSource 错误:", err);
+            eventSource.close();
+            currentEventSource = null;
+            sendButton.disabled = false;
+
+            // 如果还只是占位符，给出错误提示
+            if (aiSpan && aiSpan.textContent.trim() === "▍") {
+                aiSpan.textContent = "抱歉，连接出错了，请稍后重试。";
+            }
+        };
+    }
+
+    // 回车发送
+    function handleKeyPress(event) {
+        if (event.key === "Enter" && !event.shiftKey) {
+            event.preventDefault();
+            if (!sendButton.disabled) {
+                sendMessage();
+            }
+        }
+    }
+
+    // 简单 HTML 转义，防止 XSS
+    function escapeHtml(str) {
+        if (str == null) return "";
+        return String(str)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+    }
+</script>
+</body>
+</html>
