@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI对话助手</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        .message-fade-in {
+            animation: fadeIn 0.3s ease-in-out;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .typing-indicator {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: #9ca3af;
+            margin: 0 2px;
+            animation: typing 1.4s infinite ease-in-out;
+        }
+
+        .typing-indicator:nth-child(1) { animation-delay: -0.32s; }
+        .typing-indicator:nth-child(2) { animation-delay: -0.16s; }
+
+        @keyframes typing {
+            0%, 80%, 100% { transform: scale(0.8); opacity: 0.5; }
+            40% { transform: scale(1); opacity: 1; }
+        }
+
+        .sidebar-transition {
+            transition: all 0.3s ease-in-out;
+        }
+
+        .chat-item:hover .chat-actions {
+            opacity: 1;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 h-screen flex overflow-hidden">
+<!-- 侧边栏 -->
+<div class="w-64 bg-white shadow-lg sidebar-transition flex flex-col">
+    <!-- 新建聊天按钮 -->
+    <div class="p-4 border-b">
+        <button id="newChatBtn" class="w-full bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded-lg flex items-center justify-center transition-colors">
+            <i class="fas fa-plus mr-2"></i>
+            新建聊天
+        </button>
+    </div>
+
+    <!-- 聊天列表 -->
+    <div class="flex-1 overflow-y-auto p-2">
+        <div id="chatList" class="space-y-1">
+            <!-- 聊天项将通过JS动态生成 -->
+        </div>
+    </div>
+
+    <!-- 底部信息 -->
+    <div class="p-4 border-t text-xs text-gray-500">
+        <div class="flex items-center">
+            <i class="fas fa-robot mr-2 text-blue-500"></i>
+            <span>AI对话助手</span>
+        </div>
+    </div>
+</div>
+
+<!-- 主内容区域 -->
+<div class="flex-1 flex flex-col">
+    <!-- 顶部栏 -->
+    <header class="bg-white shadow-sm py-4 px-6">
+        <div class="flex justify-between items-center">
+            <h1 id="currentChatTitle" class="text-xl font-semibold text-gray-800">新对话</h1>
+            <div class="flex items-center space-x-4">
+                <div class="flex items-center">
+                    <span class="text-sm text-gray-600 mr-2">模型:</span>
+                    <select id="modelSelect" class="border rounded-md px-3 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="deepseek-r1:1.5b">DeepSeek R1 1.5B</option>
+                        <option value="llama2">Llama 2</option>
+                        <option value="mistral">Mistral</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- 对话区域 -->
+    <main class="flex-1 overflow-hidden p-6">
+        <div id="chatContainer" class="bg-white rounded-xl shadow-md h-full overflow-y-auto p-6">
+            <!-- 欢迎消息 -->
+            <div id="welcomeMessage" class="flex justify-center items-center h-full">
+                <div class="text-center max-w-lg">
+                    <i class="fas fa-robot text-6xl text-blue-500 mb-6"></i>
+                    <h2 class="text-2xl font-bold text-gray-800 mb-4">欢迎使用AI对话助手</h2>
+                    <p class="text-gray-600 mb-6">我可以帮助您解答问题、提供信息和进行对话。请在下方的输入框中输入您的问题。</p>
+                    <div class="bg-blue-50 rounded-lg p-4 text-left">
+                        <h3 class="font-semibold text-blue-700 mb-2">使用提示：</h3>
+                        <ul class="text-sm text-gray-600 space-y-1">
+                            <li>• 点击左侧"新建聊天"开始新的对话</li>
+                            <li>• 支持多轮对话，上下文会保持连贯</li>
+                            <li>• 按Enter发送消息，Shift+Enter换行</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 消息将在这里动态添加 -->
+            <div id="messagesContainer" class="space-y-6 hidden"></div>
+        </div>
+    </main>
+
+    <!-- 输入区域 -->
+    <footer class="bg-white border-t p-4">
+        <div class="container mx-auto max-w-4xl">
+            <div class="flex space-x-4">
+                <div class="flex-1 relative">
+                        <textarea
+                                id="messageInput"
+                                placeholder="输入您的问题..."
+                                rows="1"
+                                class="w-full border rounded-xl py-3 px-4 pr-12 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                        ></textarea>
+                    <button id="sendBtn" class="absolute right-3 bottom-3 bg-blue-500 hover:bg-blue-600 text-white p-2 rounded-lg transition-colors">
+                        <i class="fas fa-paper-plane"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="mt-2 text-xs text-gray-500 flex justify-between">
+                <div>按 Enter 发送，Shift+Enter 换行</div>
+                <div id="statusIndicator" class="hidden text-blue-500">
+                    <span class="typing-indicator"></span>
+                    <span class="typing-indicator"></span>
+                    <span class="typing-indicator"></span>
+                    <span class="ml-2">AI正在思考...</span>
+                </div>
+            </div>
+        </div>
+    </footer>
+</div>
+
+<!-- 重命名模态框 -->
+<div id="renameModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
+    <div class="bg-white rounded-lg p-6 w-80">
+        <h3 class="text-lg font-semibold mb-4">重命名对话</h3>
+        <input
+                type="text"
+                id="renameInput"
+                class="w-full border rounded-lg px-3 py-2 mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="输入新名称"
+        >
+        <div class="flex justify-end space-x-2">
+            <button id="cancelRename" class="px-4 py-2 text-gray-600 hover:text-gray-800">取消</button>
+            <button id="confirmRename" class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600">确认</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    // 状态管理
+    let chatState = {
+        currentChatId: null,
+        chats: JSON.parse(localStorage.getItem('aiChats')) || {},
+        chatOrder: JSON.parse(localStorage.getItem('aiChatOrder')) || []
+    };
+
+    // DOM元素
+    const chatList = document.getElementById('chatList');
+    const messagesContainer = document.getElementById('messagesContainer');
+    const chatContainer = document.getElementById('chatContainer');
+    const welcomeMessage = document.getElementById('welcomeMessage');
+    const messageInput = document.getElementById('messageInput');
+    const sendBtn = document.getElementById('sendBtn');
+    const newChatBtn = document.getElementById('newChatBtn');
+    const currentChatTitle = document.getElementById('currentChatTitle');
+    const statusIndicator = document.getElementById('statusIndicator');
+    const modelSelect = document.getElementById('modelSelect');
+    const renameModal = document.getElementById('renameModal');
+    const renameInput = document.getElementById('renameInput');
+    const cancelRename = document.getElementById('cancelRename');
+    const confirmRename = document.getElementById('confirmRename');
+
+    let renameChatId = null;
+
+    // 初始化
+    function init() {
+        renderChatList();
+
+        // 如果有聊天记录，显示最后一个
+        if (chatState.chatOrder.length > 0) {
+            const lastChatId = chatState.chatOrder[chatState.chatOrder.length - 1];
+            switchToChat(lastChatId);
+        }
+
+        // 事件监听
+        setupEventListeners();
+    }
+
+    // 设置事件监听
+    function setupEventListeners() {
+        sendBtn.addEventListener('click', sendMessage);
+        newChatBtn.addEventListener('click', createNewChat);
+
+        messageInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+
+        messageInput.addEventListener('input', function() {
+            this.style.height = 'auto';
+            this.style.height = (this.scrollHeight) + 'px';
+        });
+
+        cancelRename.addEventListener('click', () => renameModal.classList.add('hidden'));
+        confirmRename.addEventListener('click', confirmRenameChat);
+    }
+
+    // 创建新聊天
+    function createNewChat() {
+        const chatId = 'chat_' + Date.now();
+        const chatTitle = '新对话 ' + (chatState.chatOrder.length + 1);
+
+        chatState.chats[chatId] = {
+            id: chatId,
+            title: chatTitle,
+            messages: [],
+            createdAt: new Date().toISOString()
+        };
+
+        chatState.chatOrder.push(chatId);
+        saveToLocalStorage();
+        renderChatList();
+        switchToChat(chatId);
+
+        // 清空输入框
+        messageInput.value = '';
+        messageInput.style.height = 'auto';
+    }
+
+    // 切换到指定聊天
+    function switchToChat(chatId) {
+        chatState.currentChatId = chatId;
+        const chat = chatState.chats[chatId];
+
+        currentChatTitle.textContent = chat.title;
+        welcomeMessage.classList.add('hidden');
+        messagesContainer.classList.remove('hidden');
+
+        renderMessages(chat.messages);
+
+        // 更新聊天列表激活状态
+        document.querySelectorAll('.chat-item').forEach(item => {
+            item.classList.remove('bg-blue-50', 'border-blue-200');
+        });
+        document.getElementById(`chat-${chatId}`).classList.add('bg-blue-50', 'border-blue-200');
+    }
+
+    // 渲染聊天列表
+    function renderChatList() {
+        chatList.innerHTML = '';
+
+        chatState.chatOrder.forEach(chatId => {
+            const chat = chatState.chats[chatId];
+            const isActive = chatState.currentChatId === chatId;
+
+            const chatItem = document.createElement('div');
+            chatItem.id = `chat-${chatId}`;
+            chatItem.className = `chat-item p-3 rounded-lg border cursor-pointer transition-colors ${
+                isActive ? 'bg-blue-50 border-blue-200' : 'border-transparent hover:bg-gray-50'
+            }`;
+
+            chatItem.innerHTML = `
+                    <div class="flex justify-between items-center">
+                        <div class="flex-1 min-w-0">
+                            <div class="font-medium text-gray-800 truncate">${chat.title}</div>
+                            <div class="text-xs text-gray-500 truncate">
+                                ${chat.messages.length > 0 ?
+                chat.messages[chat.messages.length - 1].content.substring(0, 20) + '...' :
+                '暂无消息'}
+                            </div>
+                        </div>
+                        <div class="chat-actions opacity-0 transition-opacity flex space-x-1 ml-2">
+                            <button class="rename-btn p-1 text-gray-400 hover:text-blue-500" data-chat-id="${chatId}">
+                                <i class="fas fa-edit text-xs"></i>
+                            </button>
+                            <button class="delete-btn p-1 text-gray-400 hover:text-red-500" data-chat-id="${chatId}">
+                                <i class="fas fa-trash text-xs"></i>
+                            </button>
+                        </div>
+                    </div>
+                `;
+
+            chatItem.addEventListener('click', (e) => {
+                if (!e.target.closest('.chat-actions')) {
+                    switchToChat(chatId);
+                }
+            });
+
+            // 重命名事件
+            chatItem.querySelector('.rename-btn').addEventListener('click', (e) => {
+                e.stopPropagation();
+                openRenameModal(chatId, chat.title);
+            });
+
+            // 删除事件
+            chatItem.querySelector('.delete-btn').addEventListener('click', (e) => {
+                e.stopPropagation();
+                deleteChat(chatId);
+            });
+
+            chatList.appendChild(chatItem);
+        });
+    }
+
+    // 打开重命名模态框
+    function openRenameModal(chatId, currentTitle) {
+        renameChatId = chatId;
+        renameInput.value = currentTitle;
+        renameModal.classList.remove('hidden');
+        renameInput.focus();
+    }
+
+    // 确认重命名
+    function confirmRenameChat() {
+        if (renameChatId && renameInput.value.trim()) {
+            chatState.chats[renameChatId].title = renameInput.value.trim();
+            saveToLocalStorage();
+            renderChatList();
+
+            if (chatState.currentChatId === renameChatId) {
+                currentChatTitle.textContent = renameInput.value.trim();
+            }
+
+            renameModal.classList.add('hidden');
+            renameChatId = null;
+        }
+    }
+
+    // 删除聊天
+    function deleteChat(chatId) {
+        if (confirm('确定要删除这个对话吗？')) {
+            delete chatState.chats[chatId];
+            chatState.chatOrder = chatState.chatOrder.filter(id => id !== chatId);
+            saveToLocalStorage();
+            renderChatList();
+
+            if (chatState.currentChatId === chatId) {
+                if (chatState.chatOrder.length > 0) {
+                    switchToChat(chatState.chatOrder[0]);
+                } else {
+                    // 没有聊天了，显示欢迎页面
+                    chatState.currentChatId = null;
+                    currentChatTitle.textContent = '新对话';
+                    welcomeMessage.classList.remove('hidden');
+                    messagesContainer.classList.add('hidden');
+                }
+            }
+        }
+    }
+
+    // 渲染消息
+    function renderMessages(messages) {
+        messagesContainer.innerHTML = '';
+
+        messages.forEach(message => {
+            addMessageToContainer(message.content, message.isUser, false, message.id);
+        });
+    }
+
+    // 添加消息到容器
+    function addMessageToContainer(content, isUser = false, isStreaming = false, messageId = null) {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `flex mb-4 message-fade-in ${isUser ? 'justify-end' : 'justify-start'}`;
+
+        if (messageId) {
+            messageDiv.id = `message-${messageId}`;
+        }
+
+        let messageContent = content;
+        if (isStreaming) {
+            messageContent = '<span class="typing-indicator"></span><span class="typing-indicator"></span><span class="typing-indicator"></span>';
+        }
+
+        messageDiv.innerHTML = `
+                <div class="max-w-[80%] p-4 rounded-2xl ${
+            isUser
+                ? 'bg-blue-500 text-white rounded-br-none'
+                : 'bg-gray-100 text-gray-800 rounded-bl-none'
+        }">
+                    <div class="flex items-center mb-2">
+                        <div class="w-6 h-6 rounded-full flex items-center justify-center mr-2 ${
+            isUser ? 'bg-blue-400' : 'bg-gray-300'
+        }">
+                            <i class="fas ${isUser ? 'fa-user' : 'fa-robot'} text-xs ${isUser ? 'text-white' : 'text-gray-600'}"></i>
+                        </div>
+                        <span class="text-sm font-medium ${isUser ? 'text-blue-100' : 'text-gray-600'}">
+                            ${isUser ? '您' : 'AI助手'}
+                        </span>
+                    </div>
+                    <div class="message-content">${messageContent}</div>
+                </div>
+            `;
+
+        // 如果是流式消息，添加ID以便更新
+        if (isStreaming) {
+            messageDiv.querySelector('.message-content').id = 'streamingMessage';
+        }
+
+        messagesContainer.appendChild(messageDiv);
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+
+        return messageDiv;
+    }
+
+    // 发送消息
+    function sendMessage() {
+        const message = messageInput.value.trim();
+        if (!message) return;
+
+        // 如果没有当前聊天，创建一个
+        if (!chatState.currentChatId) {
+            createNewChat();
+        }
+
+        // 清空输入框并禁用发送按钮
+        messageInput.value = '';
+        messageInput.style.height = 'auto';
+        sendBtn.disabled = true;
+
+        // 添加用户消息
+        const userMessageId = 'msg_' + Date.now();
+        addMessageToContainer(message, true, false, userMessageId);
+
+        // 保存用户消息到状态
+        chatState.chats[chatState.currentChatId].messages.push({
+            id: userMessageId,
+            content: message,
+            isUser: true,
+            timestamp: new Date().toISOString()
+        });
+
+        // 显示状态指示器
+        statusIndicator.classList.remove('hidden');
+
+        // 添加AI消息占位符
+        const aiMessageId = 'msg_' + Date.now();
+        addMessageToContainer('', false, true, aiMessageId);
+
+        // 构建API URL
+        const model = modelSelect.value;
+        const apiUrl = `http://localhost:8090/api/v1/ollama/generate_stream?model=${model}&message=${encodeURIComponent(message)}`;
+
+        // 使用EventSource接收流式响应
+        const eventSource = new EventSource(apiUrl);
+        let buffer = '';
+
+        eventSource.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                const content = data.result?.output?.content || '';
+                const finishReason = data.result?.metadata?.finishReason;
+
+                if (content) {
+                    buffer += content;
+                    updateStreamingMessage(buffer, true);
+                }
+
+                if (finishReason === 'STOP') {
+                    eventSource.close();
+                    updateStreamingMessage(buffer, false);
+
+                    // 保存AI消息到状态
+                    chatState.chats[chatState.currentChatId].messages.push({
+                        id: aiMessageId,
+                        content: buffer,
+                        isUser: false,
+                        timestamp: new Date().toISOString()
+                    });
+
+                    saveToLocalStorage();
+                    sendBtn.disabled = false;
+                    statusIndicator.classList.add('hidden');
+                }
+            } catch (error) {
+                console.error('解析错误:', error);
+            }
+        };
+
+        eventSource.onerror = (error) => {
+            console.error('EventSource错误:', error);
+            eventSource.close();
+            updateStreamingMessage('抱歉，发生了错误，请稍后重试。', false);
+            sendBtn.disabled = false;
+            statusIndicator.classList.add('hidden');
+        };
+    }
+
+    // 更新流式消息
+    function updateStreamingMessage(content, showCursor = true) {
+        const streamingMessage = document.getElementById('streamingMessage');
+        if (streamingMessage) {
+            streamingMessage.innerHTML = content + (showCursor ? '<span class="animate-pulse">▍</span>' : '');
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+    }
+
+    // 保存到本地存储
+    function saveToLocalStorage() {
+        localStorage.setItem('aiChats', JSON.stringify(chatState.chats));
+        localStorage.setItem('aiChatOrder', JSON.stringify(chatState.chatOrder));
+    }
+
+    // 初始化应用
+    init();
+</script>
+</body>
+</html>

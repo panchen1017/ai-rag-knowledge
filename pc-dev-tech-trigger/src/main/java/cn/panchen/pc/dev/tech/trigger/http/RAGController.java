@@ -21,7 +21,7 @@ import java.util.List;
 @Slf4j
 @RestController()
 @CrossOrigin("*")
-@RequestMapping("/api/v1/ollama/")
+@RequestMapping("/api/v1/rag/")
 public class RAGController implements IRAGService {
 
     @Resource
@@ -56,7 +56,7 @@ public class RAGController implements IRAGService {
 
     @RequestMapping(value = "file/upload", method = RequestMethod.POST, headers = "content-type=multipart/form-data")
     @Override
-    public Response<String> uploadFile(@RequestParam String ragTag, @RequestParam List<MultipartFile> files) {
+    public Response<String> uploadFile(@RequestParam String ragTag, @RequestParam("file") List<MultipartFile> files) {
         /**
          *  上传知识库文件接口，根据 ragTag，上传不同知识库的文件
          *  例：
