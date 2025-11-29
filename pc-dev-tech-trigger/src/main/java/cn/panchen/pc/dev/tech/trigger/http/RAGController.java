@@ -62,16 +62,16 @@ public class RAGController implements IRAGService {
                 .build();
     }
 
+    /**
+     *  上传知识库文件接口，根据 ragTag，上传不同知识库的文件
+     *  例：
+     *      ragTag： ----------知识库文件----------
+     *      Java开发：《SpringBoot AI》、《MVC架构》
+     *      旅行：《北京一日游》、《上海周边三日游》
+     */
     @RequestMapping(value = "file/upload", method = RequestMethod.POST, headers = "content-type=multipart/form-data")
     @Override
     public Response<String> uploadFile(@RequestParam String ragTag, @RequestParam("file") List<MultipartFile> files) {
-        /**
-         *  上传知识库文件接口，根据 ragTag，上传不同知识库的文件
-         *  例：
-         *      ragTag： ----------知识库文件----------
-         *      Java开发：《SpringBoot AI》、《MVC架构》
-         *      旅行：《北京一日游》、《上海周边三日游》
-         */
         log.info("-----------开始上传知识库 ragtag:{}----------", ragTag);
         for (MultipartFile file: files) {
             TikaDocumentReader reader = new TikaDocumentReader(file.getResource());
@@ -109,7 +109,7 @@ public class RAGController implements IRAGService {
     @RequestMapping(value = "analyze_git_repository", method = RequestMethod.POST)
     @Override
     public Response<String> analyzeGitRepository(@RequestParam String repoUrl, @RequestParam String userName, @RequestParam String token) throws Exception {
-        String localPath = "./git-cloned-repo";
+        String localPath = "git-cloned-repo";
         // 分割下工程名称
         // 例如：https://github.com/panchen1017/ai-rag-knowledge
         // 取出：ai-rag-knowledge 作为 RAG 的 tag
@@ -153,7 +153,7 @@ public class RAGController implements IRAGService {
                 return FileVisitResult.CONTINUE;
             }
         });
-        FileUtils.deleteDirectory(new File(localPath));
+//        FileUtils.deleteDirectory(new File(localPath));
 
         // 添加新的工程名称：ai-rag-knowledge
         RList<String> elements = redissonClient.getList("ragTag");

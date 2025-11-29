@@ -33,6 +33,13 @@ spring:
         options:
           num-batch: 512
         model: nomic-embed-text
+    openai:
+      base-url: https://apis.itedus.cn/
+      api-key: sk-uEA6GlHv4M5QyqWP8f565aF0108a4c859082Af3c462d2f6a
+      embedding-model: text-embedding-ada-002
+    rag:
+      embed: nomic-embed-text #nomic-embed-text、text-embedding-ada-002
+
 
 # Redis
 redis:

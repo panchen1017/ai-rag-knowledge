@@ -4,6 +4,8 @@ import org.springframework.ai.ollama.OllamaChatClient;
 import org.springframework.ai.ollama.OllamaEmbeddingClient;
 import org.springframework.ai.ollama.api.OllamaApi;
 import org.springframework.ai.ollama.api.OllamaOptions;
+import org.springframework.ai.openai.OpenAiEmbeddingClient;
+import org.springframework.ai.openai.api.OpenAiApi;
 import org.springframework.ai.transformer.splitter.TokenTextSplitter;
 import org.springframework.ai.vectorstore.PgVectorStore;
 import org.springframework.ai.vectorstore.SimpleVectorStore;
@@ -15,11 +17,25 @@ import org.springframework.jdbc.core.JdbcTemplate;
 @Configuration
 public class OllamaConfig {
 
+    /**
+     * ollamaAI 引擎
+     * @param baseUrl
+     * @return
+     */
     @Bean
     public OllamaApi ollamaApi(@Value("${spring.ai.ollama.base-url}") String baseUrl) {
         return new OllamaApi(baseUrl);
     }
 
+    /**
+     * openAI 引擎
+     * @param baseUrl
+     * @return
+     */
+    @Bean
+    public OpenAiApi openAiApi(@Value("${spring.ai.openai.base-url}") String baseUrl, @Value("${spring.ai.openai.api-key}") String apikey) {
+        return new OpenAiApi(baseUrl, apikey);
+    }
     /**
      * 客户端
      */
@@ -46,17 +62,39 @@ public class OllamaConfig {
     /**
      * 存储到向量数据库
      * 实例化带存储库的方式
+     * 根据配置文件中的配置来选择不同的向量库
      * @param ollamaApi
      * @param jdbcTemplate
      * @return
      */
     @Bean
-    public PgVectorStore pgVectorStore(OllamaApi ollamaApi, JdbcTemplate jdbcTemplate) {
-        OllamaEmbeddingClient embeddingClient = new OllamaEmbeddingClient(ollamaApi);
-        // 使用的是啥模型做向量库
-        embeddingClient.withDefaultOptions(OllamaOptions.create().withModel("nomic-embed-text"));
-        return new PgVectorStore(jdbcTemplate, embeddingClient);
+    public PgVectorStore pgVectorStore(@Value("${spring.ai.rag.embed}") String model, OllamaApi ollamaApi, OpenAiApi openAiApi, JdbcTemplate jdbcTemplate) {
+        if ("nomic-embed-text".equalsIgnoreCase(model)) {
+            OllamaEmbeddingClient embeddingClient = new OllamaEmbeddingClient(ollamaApi);
+            embeddingClient.withDefaultOptions(OllamaOptions.create().withModel("nomic-embed-text"));
+            return new PgVectorStore(jdbcTemplate, embeddingClient);
+        } else {
+            OpenAiEmbeddingClient embeddingClient = new OpenAiEmbeddingClient(openAiApi);
+            return new PgVectorStore(jdbcTemplate, embeddingClient);
+        }
     }
+//    @Bean
+//    public PgVectorStore pgVectorStore(OllamaApi ollamaApi, JdbcTemplate jdbcTemplate) {
+//        OllamaEmbeddingClient embeddingClient = new OllamaEmbeddingClient(ollamaApi);
+//        // 使用的是啥模型做向量库
+//        embeddingClient.withDefaultOptions(OllamaOptions.create().withModel("nomic-embed-text"));
+//        return new PgVectorStore(jdbcTemplate, embeddingClient);
+//    }
 
-
+    @Bean
+    public SimpleVectorStore vectorStore(@Value("${spring.ai.rag.embed}") String model, OllamaApi ollamaApi, OpenAiApi openAiApi) {
+        if ("nomic-embed-text".equalsIgnoreCase(model)) {
+            OllamaEmbeddingClient embeddingClient = new OllamaEmbeddingClient(ollamaApi);
+            embeddingClient.withDefaultOptions(OllamaOptions.create().withModel("nomic-embed-text"));
+            return new SimpleVectorStore(embeddingClient);
+        } else {
+            OpenAiEmbeddingClient embeddingClient = new OpenAiEmbeddingClient(openAiApi);
+            return new SimpleVectorStore(embeddingClient);
+        }
+    }
 }

@@ -1,5 +1,6 @@
 package cn.panchen.pc.dev.tech.api;
 
+import cn.panchen.pc.dev.tech.api.response.Response;
 import org.springframework.ai.chat.ChatResponse;
 import reactor.core.publisher.Flux;
 
@@ -19,4 +20,7 @@ public interface IAiService {
     // 答案像真人对话一样，一个字一个字地、或者一个词一个词地“流”出来。用户可以几乎无延迟地开始阅读答案的开头部分，而不必等待整个答案生成。
     Flux<ChatResponse> generateStream(String model, String message);
 
+
+
+    Flux<ChatResponse> generateStreamRag(String model, String ragTag, String message);
 }
