@@ -4,6 +4,9 @@ import cn.panchen.pc.dev.tech.api.IRAGService;
 import cn.panchen.pc.dev.tech.api.response.Response;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.io.FileUtils;
+import org.eclipse.jgit.api.Git;
+import org.eclipse.jgit.transport.UsernamePasswordCredentialsProvider;
 import org.redisson.api.RList;
 import org.redisson.api.RedissonClient;
 import org.redisson.client.RedisClient;
@@ -13,9 +16,14 @@ import org.springframework.ai.reader.tika.TikaDocumentReader;
 import org.springframework.ai.transformer.splitter.TokenTextSplitter;
 import org.springframework.ai.vectorstore.PgVectorStore;
 import org.springframework.ai.vectorstore.SimpleVectorStore;
+import org.springframework.core.io.PathResource;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.*;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.List;
 
 @Slf4j
@@ -88,11 +96,75 @@ public class RAGController implements IRAGService {
         return Response.<String>builder().code("0000").info("调用成功").build();
     }
 
+    /**
+     * 分析 Git 代码
+     * 填写仓库url，用户名，token后，就将代码拉下来并且上传对应的知识库
+     * @param repoUrl：仓库 url
+     * @param userName：用户名
+     * @param token：token
+     * @return
+     * @throws Exception
+     */
+    @RequestMapping(value = "analyze_git_repository", method = RequestMethod.POST)
+    @Override
+    public Response<String> analyzeGitRepository(@RequestParam String repoUrl, @RequestParam String userName, @RequestParam String token) throws Exception {
+        String localPath = "./git-cloned-repo";
+        // 分割下工程名称
+        // 例如：https://github.com/panchen1017/ai-rag-knowledge
+        // 取出：ai-rag-knowledge 作为 RAG 的 tag
+        String repoProjectName = extractProjectName(repoUrl);
+        log.info("克隆路径：{}", new File(localPath).getAbsolutePath());
 
+        // 先删除本来文件夹中的代码
+        FileUtils.deleteDirectory(new File(localPath));
+        // 拉代码
+        Git git = Git.cloneRepository()
+                .setURI(repoUrl)
+                .setDirectory(new File(localPath))
+                .setCredentialsProvider(new UsernamePasswordCredentialsProvider(userName, token))
+                .call();
 
+        // 上传知识库
+        Files.walkFileTree(Paths.get(localPath), new SimpleFileVisitor<>() {
+            @Override
+            public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
+                log.info("{} 遍历解析路径，上传知识库:{}", repoProjectName, file.getFileName());
+                try {
+                    TikaDocumentReader reader = new TikaDocumentReader(new PathResource(file));
+                    List<Document> documents = reader.get();
+                    List<Document> documentSplitterList = tokenTextSplitter.apply(documents);
+                    documents.forEach(doc -> doc.getMetadata().put("knowledge", repoProjectName));
 
+                    documentSplitterList.forEach(doc -> doc.getMetadata().put("knowledge", repoProjectName));
+                    pgVectorStore.accept(documentSplitterList);
+                } catch (Exception e) {
+                    log.error("遍历解析路径，上传知识库失败:{}", file.getFileName());
+                }
+                return FileVisitResult.CONTINUE;
+            }
 
+            @Override
+            public FileVisitResult visitFileFailed(Path file, IOException exc) throws IOException {
+                log.info("Failed to access file: {} - {}", file.toString(), exc.getMessage());
+                return FileVisitResult.CONTINUE;
+            }
+        });
+        FileUtils.deleteDirectory(new File(localPath));
 
+        // 添加新的工程名称：ai-rag-knowledge
+        RList<String> elements = redissonClient.getList("ragTag");
+        if (!elements.contains(repoProjectName)) {
+            elements.add(repoProjectName);
+        }
 
+        git.close();
+        log.info("遍历解析路径，上传完成:{}", repoUrl);
+        return Response.<String>builder().code("0000").info("调用成功").build();
+    }
 
+    private String extractProjectName(String repoUrl) {
+        String[] parts = repoUrl.split("/");
+        String projectNameWithGit = parts[parts.length - 1];
+        return projectNameWithGit.replace(".git", "");
+    }
 }
