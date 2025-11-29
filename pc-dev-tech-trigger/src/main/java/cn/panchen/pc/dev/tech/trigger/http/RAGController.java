@@ -98,6 +98,7 @@ public class RAGController implements IRAGService {
 
     /**
      * 分析 Git 代码
+     * 1. 克隆仓库 → 2. 遍历文件 → 3. 解析内容 → 4. 向量化存储
      * 填写仓库url，用户名，token后，就将代码拉下来并且上传对应的知识库
      * @param repoUrl：仓库 url
      * @param userName：用户名
@@ -124,6 +125,9 @@ public class RAGController implements IRAGService {
                 .setCredentialsProvider(new UsernamePasswordCredentialsProvider(userName, token))
                 .call();
 
+        /**
+         * Git 仓库下文件结构嵌套很深（多模块、多层目录），用 walkFileTree 可以统一处理所有文件，同时对异常/无法访问的文件统一兜底。
+         */
         // 上传知识库
         Files.walkFileTree(Paths.get(localPath), new SimpleFileVisitor<>() {
             @Override
